@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTRY v6.0 - MORSE DECODER</title>
+    <style>
+        body { background: #000; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; padding: 20px; text-align: center; }
+        #visualizer { width: 100%; height: 100px; border: 1px solid #003300; margin-bottom: 20px; }
+        #output { background: #050505; border: 1px solid #00ff41; min-height: 150px; padding: 15px; font-size: 20px; word-wrap: break-word; color: #fff; margin-bottom: 20px; }
+        .controls { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        button { background: transparent; border: 1px solid #00ff41; color: #00ff41; padding: 20px; font-weight: bold; }
+        .glitch { animation: flash 1s infinite; }
+        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="glitch">>> SENTRY_SIGNAL_DECODER_v6.0</div>
+    <canvas id="visualizer"></canvas>
+
+    <div id="output" placeholder="AGUARDANDO SINAL...">[ MENSAGEM DESCODIFICADA APARECERÁ AQUI ]</div>
+
+    <div class="controls">
+        <button onclick="startDecoding()">ATIVAR ESCUTA DE MICROFONE</button>
+        <button onclick="document.getElementById('output').innerText = ''" style="border-color: #555; color: #555; margin-top: 10px;">LIMPAR LOG</button>
+    </div>
+
+    <script>
+        const morseCode = {
+            ".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E", "..-.": "F", "--.": "G", "....": "H", "..": "I", ".---": "J", "-.-": "K", ".-..": "L", "--": "M", "-.": "N", "---": "O", ".--.": "P", "--.-": "Q", ".-.": "R", "...": "S", "-": "T", "..-": "U", "...-": "V", ".--": "W", "-..-": "X", "-.--": "Y", "--..": "Z", "-----": "0", ".----": "1", "..---": "2", "...--": "3", "....-": "4", ".....": "5", "-....": "6", "--...": "7", "---..": "8", "----.": "9"
+        };
+
+        let audioContext, analyser, dataArray, source;
+        let currentSymbol = "";
+        let lastState = false; // false = silêncio, true = sinal
+        let startTime = 0;
+
+        async function startDecoding() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            source = audioContext.createMediaStreamSource(stream);
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            draw();
+            processSignal();
+        }
+
+        function processSignal() {
+            analyser.getByteFrequencyData(dataArray);
+            // Foca na frequência média-alta típica do Morse (700Hz - 1000Hz)
+            const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            const threshold = 40; // Ajuste conforme o ruído ambiente
+            const isSignaling = volume > threshold;
+
+            if (isSignaling !== lastState) {
+                const duration = Date.now() - startTime;
+                if (lastState) { // Fim de um sinal (ponto ou traço)
+                    currentSymbol += (duration < 200) ? "." : "-";
+                } else { // Fim de um silêncio (espaço entre letras ou palavras)
+                    if (duration > 500 && currentSymbol !== "") {
+                        decodeSymbol();
+                    }
+                    if (duration > 1500) {
+                        document.getElementById('output').innerText += " ";
+                    }
+                }
+                startTime = Date.now();
+                lastState = isSignaling;
+            }
+            requestAnimationFrame(processSignal);
+        }
+
+        function decodeSymbol() {
+            const char = morseCode[currentSymbol] || "?";
+            document.getElementById('output').innerText += char;
+            currentSymbol = "";
+        }
+
+        function draw() {
+            const canvas = document.getElementById('visualizer');
+            const ctx = canvas.getContext('2d');
+            requestAnimationFrame(draw);
+            analyser.getByteFrequencyData(dataArray);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#00ff41';
+            ctx.beginPath();
+            const sliceWidth = canvas.width / dataArray.length;
+            let x = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * canvas.height / 2;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                x += sliceWidth;
+            }
+            ctx.stroke();
+        }
+    </script>
+</body>
+</html>
